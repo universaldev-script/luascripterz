@@ -1,0 +1,252 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local Settings = {
+    AutoRevive = true,
+    ESP = true,
+    TeamCheck = false,
+    ESPColor = Color3.new(0, 1, 0),
+    MaxDistance = 500,
+}
+
+local ESPObjects = {}
+local Connections = {}
+local ReviveCooldown = false
+
+local function GetRemote(name)
+    for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
+        if remote:IsA("RemoteEvent") and remote.Name:lower():find(name:lower()) then
+            return remote
+        end
+    end
+    for _, remote in ipairs(game:GetService("ReplicatedFirst"):GetDescendants()) do
+        if remote:IsA("RemoteEvent") and remote.Name:lower():find(name:lower()) then
+            return remote
+        end
+    end
+    for _, remote in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+        if remote:IsA("RemoteEvent") and remote.Name:lower():find(name:lower()) then
+            return remote
+        end
+    end
+    return nil
+end
+
+local function Revive()
+    if ReviveCooldown then return end
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    if humanoid.Health > 0 then return end
+    
+    local reviveRemote = GetRemote("revive") or GetRemote("respawn") or GetRemote("resurrect")
+    if reviveRemote then
+        ReviveCooldown = true
+        reviveRemote:FireServer()
+        task.wait(2)
+        ReviveCooldown = false
+    else
+        -- Fallback: try to respawn via game's default method
+        local respawn = game:GetService("ReplicatedStorage"):FindFirstChild("Respawn")
+        if respawn then
+            ReviveCooldown = true
+            respawn:FireServer()
+            task.wait(2)
+            ReviveCooldown = false
+        end
+    end
+end
+
+local function IsDowned()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    if humanoid.Health <= 0 then return true end
+    local downed = character:FindFirstChild("Downed") or character:FindFirstChild("IsDowned")
+    if downed and downed.Value == true then return true end
+    return false
+end
+
+local function CreateESP(player)
+    local character = player.Character
+    if not character then return nil end
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    
+    local esp = Instance.new("BillboardGui")
+    esp.Name = "ESP_" .. player.Name
+    esp.Size = UDim2.new(0, 200, 0, 80)
+    esp.Adornee = root
+    esp.AlwaysOnTop = true
+    esp.MaxDistance = Settings.MaxDistance
+    esp.StudsOffset = Vector3.new(0, 3, 0)
+    esp.Parent = root
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundTransparency = 1
+    frame.Parent = esp
+    
+    local box = Instance.new("Frame")
+    box.Size = UDim2.new(0, 40, 0, 60)
+    box.Position = UDim2.new(0.5, -20, 0, 0)
+    box.BackgroundTransparency = 0.5
+    box.BackgroundColor3 = Settings.ESPColor
+    box.BorderSizePixel = 1
+    box.BorderColor3 = Settings.ESPColor
+    box.Parent = frame
+    
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 0, 20)
+    nameLabel.Position = UDim2.new(0, 0, 0, -20)
+    nameLabel.Text = player.Name
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.Parent = frame
+    
+    local healthBar = Instance.new("Frame")
+    healthBar.Size = UDim2.new(1, 0, 0, 4)
+    healthBar.Position = UDim2.new(0, 0, 1, -4)
+    healthBar.BackgroundColor3 = Color3.new(0, 1, 0)
+    healthBar.BorderSizePixel = 0
+    healthBar.Parent = frame
+    
+    local healthBg = Instance.new("Frame")
+    healthBg.Size = UDim2.new(1, 0, 0, 4)
+    healthBg.Position = UDim2.new(0, 0, 1, -4)
+    healthBg.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    healthBg.BorderSizePixel = 0
+    healthBg.Parent = frame
+    healthBg.ZIndex = 0
+    
+    return {
+        Player = player,
+        ESP = esp,
+        Box = box,
+        Name = nameLabel,
+        HealthBar = healthBar,
+        HealthBg = healthBg,
+        Humanoid = character:FindFirstChild("Humanoid"),
+        Root = root,
+    }
+end
+
+local function UpdateESP(obj)
+    local player = obj.Player
+    local character = player.Character
+    if not character then
+        obj.ESP.Enabled = false
+        return
+    end
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then
+        obj.ESP.Enabled = false
+        return
+    end
+    if Settings.TeamCheck and player.Team == LocalPlayer.Team then
+        obj.ESP.Enabled = false
+        return
+    end
+    local dist = (obj.Root.Position - Camera.CFrame.Position).Magnitude
+    if dist > Settings.MaxDistance then
+        obj.ESP.Enabled = false
+        return
+    end
+    obj.ESP.Enabled = true
+    local health = humanoid.Health
+    local maxHealth = humanoid.MaxHealth
+    local healthPercent = math.clamp(health / maxHealth, 0, 1)
+    obj.HealthBar.Size = UDim2.new(healthPercent, 0, 0, 4)
+    obj.HealthBar.BackgroundColor3 = healthPercent > 0.5 and Color3.new(0, 1, 0) or
+                                    healthPercent > 0.25 and Color3.new(1, 0.5, 0) or
+                                    Color3.new(1, 0, 0)
+end
+
+local function OnRender()
+    if Settings.AutoRevive and IsDowned() then
+        Revive()
+    end
+    
+    if Settings.ESP then
+        for _, obj in pairs(ESPObjects) do
+            UpdateESP(obj)
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local found = false
+                for _, obj in pairs(ESPObjects) do
+                    if obj.Player == player then
+                        found = true
+                        break
+                    end
+                end
+                if not found then
+                    local obj = CreateESP(player)
+                    if obj then
+                        table.insert(ESPObjects, obj)
+                    end
+                end
+            end
+        end
+    else
+        for _, obj in pairs(ESPObjects) do
+            obj.ESP.Enabled = false
+        end
+    end
+end
+
+function Evade:ToggleRevive()
+    Settings.AutoRevive = not Settings.AutoRevive
+    return Settings.AutoRevive
+end
+
+function Evade:ToggleESP()
+    Settings.ESP = not Settings.ESP
+    return Settings.ESP
+end
+
+function Evade:Init()
+    Connections.RenderStepped = RunService.RenderStepped:Connect(OnRender)
+    Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
+        if player ~= LocalPlayer then
+            task.wait(0.5)
+            local obj = CreateESP(player)
+            if obj then
+                table.insert(ESPObjects, obj)
+            end
+        end
+    end)
+    Connections.PlayerRemoving = Players.PlayerRemoving:Connect(function(player)
+        for i, obj in pairs(ESPObjects) do
+            if obj.Player == player then
+                obj.ESP:Destroy()
+                table.remove(ESPObjects, i)
+                break
+            end
+        end
+    end)
+    print("[Evade] Loaded | AutoRevive: ON | ESP: ON")
+    print("F1 to toggle AutoRevive | F2 to toggle ESP")
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.F1 then
+        local state = Evade:ToggleRevive()
+        print("AutoRevive:", state and "ON" or "OFF")
+    end
+    if input.KeyCode == Enum.KeyCode.F2 then
+        local state = Evade:ToggleESP()
+        print("ESP:", state and "ON" or "OFF")
+    end
+end)
+
+return Evade
